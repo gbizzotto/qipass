@@ -22,4 +22,4 @@ If you're retrieving a password, it'll ask your for an optional login. If none i
 
 ### TODO
 
-- Add an option to copy passwords directly to clipboard instead of showing them on screen
+- Handle up and down arrows for history

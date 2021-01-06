@@ -179,11 +179,17 @@ class Vault:
 			return
 		for entry in self.data[key]:
 			if self.decipher(entry["login"], entry["nonce"]) == login:
+				choice = 'a'
+				while choice not in "sc":
+					choice = raw_input("Print password on screen (s) or copy to clipboard (c)? ")
 				pw = self.decipher(entry["password"], entry["nonce"])
-				sys.stdout.write("    Password: " + pw + "\r")
-				sys.stdout.flush()
-				raw_input("")
-				print "\033[A    Password:", ("*"*len(pw))
+				if choice == "s":
+					sys.stdout.write("    Password: " + pw + "\r")
+					sys.stdout.flush()
+					raw_input("")
+					print "\033[A    Password:", ("*"*len(pw))
+				else:
+					put_in_clipboard(pw)
 				return
 		print "No entry with that login for", label
 
