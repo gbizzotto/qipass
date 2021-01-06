@@ -88,8 +88,9 @@ class Vault:
 			self.gsalt  = file_data['gsalt']
 			self.mph = self.hash_password(self.gsalt + getpass.getpass("Master password: "))
 			if self.mph2 != self.hash_password(self.mph):
-				print "Wrong password"
+				print "    Wrong password."
 				sys.exit(0)
+			print "    Password OK."
 		else:
 			answer = raw_input("Create new file? (y/N) ")
 			if answer != 'y':
@@ -122,10 +123,10 @@ class Vault:
 
 	def create_master_password_hash(self):
 		pw = getpass.getpass()
-		print "Your password is", get_pw_strength(pw)
+		print "    Your password is", get_pw_strength(pw)
 		pw2 = getpass.getpass("Confirm: ")
 		if pw != pw2:
-			print "Passwords do not match"
+			print "    Passwords do not match"
 			sys.exit(0)
 		self.mph = self.hash_password(self.gsalt + pw)
 		return self.hash_password(self.mph)
@@ -155,7 +156,7 @@ class Vault:
 					sys.stdout.write("    Password: " + pw + "\r")
 					sys.stdout.flush()
 					raw_input("")
-					print "\033[A    Password:", ("*"*len(pw))
+					print "\033[A    Password:", ("*"*max(16,len(pw)))
 				else:
 					put_in_clipboard(pw)
 				return
@@ -172,14 +173,21 @@ class Vault:
 			sys.stdout.write("    Password: " + pw + "\r")
 			sys.stdout.flush()
 			raw_input("")
-			print "\033[A    Password:", ("*"*len(pw))
+			print "\033[A    Password:", ("*"*max(16,len(pw)))
 
 def main(filename):
 	try:
 		vault = Vault(filename)
 		while True:
 			label = raw_input("URL/label: ")
-			if raw_input("Create new? (y/N) ") == 'y':
+			create = False
+			if not vault.has(label):
+				print "    No entry for this yet."
+				create = True
+			else:
+				print "    There are entrie(s) for this already."
+				create = raw_input("Create new? (y/N) ") == 'y'
+			if create:
 				# new entry
 				entry = {}
 				nonce = random_string(12)
@@ -188,9 +196,10 @@ def main(filename):
 				entry["password"] = vault.cipher(getpass.getpass("Password: "), nonce)
 				vault.add(label, entry)
 				vault.write()
+				print "    Saved."
 				continue
 			if not vault.has(label):
-				print "No entry for this"
+				print "No entry for this yet."
 				continue
 			login = getpass.getpass("Care to specify a login? (login/ALL) ")
 			if len(login) == 0:

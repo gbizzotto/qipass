@@ -22,4 +22,4 @@ If you're retrieving a password, it'll ask your for an optional login. If none i
 
 ### TODO
 
-- Handle up and down arrows for history
+- See issues
