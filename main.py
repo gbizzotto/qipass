@@ -147,6 +147,7 @@ class Vault:
 	def print_specific(self, label, login):
 		key = hashlib.sha256(str(self.gsalt + label).encode('utf-8')).hexdigest()
 		if key not in self.data.keys():
+			print "    No entries for", label
 			return
 		for entry in self.data[key]:
 			if self.cipher(login, entry["nonce"]) == entry["login"]:
@@ -162,12 +163,12 @@ class Vault:
 				else:
 					put_in_clipboard(pw)
 				return
-		print "No entry with that login for", label
+		print "    No entry with that login for", label
 
 	def print_all(self, label):
 		key = hashlib.sha256(str(self.gsalt + label).encode('utf-8')).hexdigest()
 		if key not in self.data.keys():
-			print "    No entries"
+			print "    No entries for", label
 			return
 		for entry in self.data[key]:
 			print "    Login:", self.decipher(entry["login"], entry["nonce"])
@@ -196,6 +197,10 @@ def main(filename):
 				entry["nonce"] = nonce
 				entry["login"] = vault.cipher(getpass.getpass("Login (optional): "), nonce)
 				entry["password"] = vault.cipher(getpass.getpass("Password: "), nonce)
+				confirm_pw = vault.cipher(getpass.getpass("Confirm: "), nonce)
+				if confirm_pw != entry["password"]:
+					print "    Passwords differ."
+					continue
 				vault.add(label, entry)
 				vault.write()
 				print "    Saved."
