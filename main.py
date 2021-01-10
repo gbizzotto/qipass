@@ -8,6 +8,7 @@ import random
 import string
 from base64 import b64encode, b64decode
 import binascii
+import copy
 
 #must install
 # pip3 install pyperclip
@@ -113,9 +114,20 @@ class Vault:
 		with open(self.path, 'w') as myfile:
 			myfile.write(json_data)
 
-	def has(self, label):
+	def has_label(self, label):
 		key = hashlib.sha256(str(self.gsalt + label).encode('utf-8')).hexdigest()
 		return key in self.data.keys()
+
+	def has_login(self, label, login):
+		key = hashlib.sha256(str(self.gsalt + label).encode('utf-8')).hexdigest()
+		if key not in self.data.keys():
+			print "    No entries for", label
+			return
+		for entry in self.data[key]:
+			if self.cipher(login, entry["nonce"]) == entry["login"]:
+				return True
+		print "    No entry with that login for", label
+		return False
 
 	def add(self, label, entry):
 		key = hashlib.sha256(str(self.gsalt + label).encode('utf-8')).hexdigest()
@@ -178,19 +190,44 @@ class Vault:
 			raw_input("")
 			print "\033[A    Password:", ("*"*max(16,len(pw)))
 
+	def delete(self, label, login):
+		key = hashlib.sha256(str(self.gsalt + label).encode('utf-8')).hexdigest()
+		if key not in self.data.keys():
+			print "    No entries for", label
+			return
+		for entry in self.data[key]:
+			if self.cipher(login, entry["nonce"]) == entry["login"]:
+				self.data[key].remove(entry)
+				return True
+		print "    No entry with that login for", label
+		return False
+
+	def update(self, label, login, pw):
+		key = hashlib.sha256(str(self.gsalt + label).encode('utf-8')).hexdigest()
+		if key not in self.data.keys():
+			print "    No entries for", label
+			return
+		for entry in self.data[key]:
+			if self.cipher(login, entry["nonce"]) == entry["login"]:
+				entry["password"] = self.cipher(pw, entry["nonce"])
+				return True
+		print "    No entry with that login for", label
+		return False
+
+
 def main(filename):
 	try:
 		vault = Vault(filename)
 		while True:
 			label = raw_input("URL/label: ")
-			create = False
-			if not vault.has(label):
-				print "    No entry for this yet."
-				create = True
+			action = None
+			if not vault.has_label(label):
+				print "    No entry for this yet, let's create one."
+				action = 'c'
 			else:
 				print "    There are entrie(s) for this already."
-				create = raw_input("Create new? (y/N) ") == 'y'
-			if create:
+				action = raw_input("Create/View/Update/Delete/NoAction? (c/v/u/d/N) ")
+			if action == 'c':
 				# new entry
 				entry = {}
 				nonce = random_string(12)
@@ -205,15 +242,57 @@ def main(filename):
 				vault.write()
 				print "    Saved."
 				continue
-			if not vault.has(label):
-				print "No entry for this yet."
-				continue
-			login = getpass.getpass("Care to specify a login? (login/ALL) ")
-			if len(login) == 0:
-				# let's decipher and show all entries
-				vault.print_all(label)
-			else:
-				vault.print_specific(label, login)
+			elif action == 'v':
+				login = getpass.getpass("Care to specify a login? (login/ALL) ")
+				if len(login) == 0:
+					# let's decipher and show all entries
+					vault.print_all(label)
+				else:
+					vault.print_specific(label, login)
+			elif action == 'd':
+				login = getpass.getpass("Login do delete: ")
+				if len(login) == 0:
+					confirm = raw_input("Delete entry for '" + label + "' with empty login? (y/N) ")
+					if confirm != 'y':
+						continue
+				vault_backup = copy.deepcopy(vault)
+				if vault.delete(label, login) == False:
+					continue
+				print "    One entry for '" + label + "' was deleted."
+				confirm = raw_input("Commit vault to file? (y/N) ")
+				if confirm != 'y':
+					del vault
+					vault = vault_backup
+					print "    Cancelled."
+					continue
+				del vault_backup
+				vault.write()
+				print "    Saved."
+			elif action == 'u':
+				login = getpass.getpass("Login do update: ")
+				if not vault.has_login(label, login):
+					continue
+				pw = getpass.getpass("New password: ")
+				confirm_pw = getpass.getpass("Confirm: ")
+				if confirm_pw != pw:
+					print "    Passwords differ."
+					continue
+				vault_backup = copy.deepcopy(vault)
+				if vault.update(label, login, pw) == False:
+					continue
+				print "    One entry for '" + label + "' was updated."
+				confirm = raw_input("Commit vault to file? (y/N) ")
+				if confirm != 'y':
+					del vault
+					vault = vault_backup
+					print "    Cancelled."
+					continue
+				del vault_backup
+				vault.write()
+				print "    Saved."
+				
+
+
 	except KeyboardInterrupt:
 		return
 
