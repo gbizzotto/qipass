@@ -80,13 +80,15 @@ class Vault:
 	def load(self, filename):
 		self.path = filename
 		if os.path.isfile(self.path):
+			# prompt for pw first thing, so if the user launches the program and starts typing his master pw right away out of habit, it'll be hidden by getpass
+			pw = getpass.getpass("Master password: ")
 			with open(filename, 'r') as myfile:
 				json_data = myfile.read()
 			file_data = json.loads(json_data)
 			self.mph2   = file_data['mph2']
 			self.data   = file_data['data']
 			self.gsalt  = file_data['gsalt']
-			self.mph = self.hash_password(self.gsalt + getpass.getpass("Master password: "))
+			self.mph = self.hash_password(self.gsalt + pw)
 			if self.mph2 != self.hash_password(self.mph):
 				print "    Wrong password."
 				sys.exit(0)
@@ -95,9 +97,9 @@ class Vault:
 			answer = raw_input("Create new file? (y/N) ")
 			if answer != 'y':
 				sys.exit(0)
+			self.mph2 = self.create_master_password_hash()
 			self.path = filename
 			self.gsalt = random_string(12)
-			self.mph2 = self.create_master_password_hash()
 			self.data = {}
 
 	def write(self):
