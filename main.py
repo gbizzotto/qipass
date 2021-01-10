@@ -149,7 +149,7 @@ class Vault:
 		if key not in self.data.keys():
 			return
 		for entry in self.data[key]:
-			if self.decipher(entry["login"], entry["nonce"]) == login:
+			if self.cipher(login, entry["nonce"]) == entry["login"]:
 				choice = 'a'
 				while choice not in "sc":
 					choice = raw_input("Print password on screen (s) or copy to clipboard (c)? ")
