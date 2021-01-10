@@ -9,6 +9,7 @@ import string
 from base64 import b64encode, b64decode
 import binascii
 import copy
+import time
 
 #must install
 # pip3 install pyperclip
@@ -29,6 +30,13 @@ from Crypto.Random import get_random_bytes
 #     ]
 #   }
 # }
+
+if sys.version_info[0] < 3:
+	def monotonic_time():
+		return time.time()
+else:
+	def monotonic_time():
+		return time.clock_gettime(time.CLOCK_MONOTONIC_RAW)
 
 def random_string(size):
 	return ''.join(random.SystemRandom().choice(string.ascii_letters + string.digits) for _ in range(size))
@@ -62,6 +70,21 @@ def get_pw_strength(password):
 
 	return ["abominable", "weak af", "weak", "meh", "OK, I guess", "good", "strong", "worthy of doom slayer"][strength]
 
+def hash_password(pw):
+	return hashlib.sha256(str(pw).encode('utf-8')).hexdigest()
+
+class Pin:
+	timeout = 30 # seconds
+	def __init__(self):
+		self.salt = random_string(12)
+		self.hashed_pin = hash_password(self.salt + getpass.getpass("Create session pin: "))
+		self.checkpoint = monotonic_time()
+	def check(self):
+		if monotonic_time() - self.checkpoint > Pin.timeout and self.hashed_pin != hash_password(self.salt + getpass.getpass("Pin: ")):
+			print "    Wrong pin."
+			sys.exit(0)
+		self.checkpoint = monotonic_time()
+
 class Vault:
 	def __init__(self, filename):
 		self.load(filename)
@@ -89,8 +112,8 @@ class Vault:
 			self.mph2   = file_data['mph2']
 			self.data   = file_data['data']
 			self.gsalt  = file_data['gsalt']
-			self.mph = self.hash_password(self.gsalt + pw)
-			if self.mph2 != self.hash_password(self.mph):
+			self.mph = hash_password(self.gsalt + pw)
+			if self.mph2 != hash_password(self.mph):
 				print "    Wrong password."
 				sys.exit(0)
 			print "    Password OK."
@@ -102,6 +125,7 @@ class Vault:
 			self.path = filename
 			self.gsalt = random_string(12)
 			self.data = {}
+		self.pin = Pin()
 
 	def write(self):
 		# rename file to avoid data loss if an error occurs during overwriting
@@ -115,10 +139,12 @@ class Vault:
 			myfile.write(json_data)
 
 	def has_label(self, label):
+		self.pin.check()
 		key = hashlib.sha256(str(self.gsalt + label).encode('utf-8')).hexdigest()
 		return key in self.data.keys()
 
 	def has_login(self, label, login):
+		self.pin.check()
 		key = hashlib.sha256(str(self.gsalt + label).encode('utf-8')).hexdigest()
 		if key not in self.data.keys():
 			print "    No entries for", label
@@ -130,6 +156,7 @@ class Vault:
 		return False
 
 	def add(self, label, entry):
+		self.pin.check()
 		key = hashlib.sha256(str(self.gsalt + label).encode('utf-8')).hexdigest()
 		if key not in self.data:
 			self.data[key] = []
@@ -142,21 +169,21 @@ class Vault:
 		if pw != pw2:
 			print "    Passwords do not match"
 			sys.exit(0)
-		self.mph = self.hash_password(self.gsalt + pw)
-		return self.hash_password(self.mph)
-
-	def hash_password(self, pw):
-		return hashlib.sha256(str(pw).encode('utf-8')).hexdigest()
+		self.mph = hash_password(self.gsalt + pw)
+		return hash_password(self.mph)
 
 	def cipher(self, data, nonce):
+		self.pin.check()
 		aes = AES.new(str(self.mph[:32]), AES.MODE_CTR, nonce=str(nonce))
 		return binascii.hexlify(aes.encrypt(pad(data, AES.block_size)))
 
 	def decipher(self, data, nonce):
+		self.pin.check()
 		aes = AES.new(str(self.mph[:32]), AES.MODE_CTR, nonce=str(nonce))
 		return unpad(aes.decrypt(binascii.unhexlify(data)), AES.block_size)
 
 	def print_specific(self, label, login):
+		self.pin.check()
 		key = hashlib.sha256(str(self.gsalt + label).encode('utf-8')).hexdigest()
 		if key not in self.data.keys():
 			print "    No entries for", label
@@ -178,6 +205,7 @@ class Vault:
 		print "    No entry with that login for", label
 
 	def print_all(self, label):
+		self.pin.check()
 		key = hashlib.sha256(str(self.gsalt + label).encode('utf-8')).hexdigest()
 		if key not in self.data.keys():
 			print "    No entries for", label
@@ -191,6 +219,7 @@ class Vault:
 			print "\033[A    Password:", ("*"*max(16,len(pw)))
 
 	def delete(self, label, login):
+		self.pin.check()
 		key = hashlib.sha256(str(self.gsalt + label).encode('utf-8')).hexdigest()
 		if key not in self.data.keys():
 			print "    No entries for", label
@@ -198,11 +227,14 @@ class Vault:
 		for entry in self.data[key]:
 			if self.cipher(login, entry["nonce"]) == entry["login"]:
 				self.data[key].remove(entry)
+				if len(self.data[key]) == 0:
+					del self.data[key]
 				return True
 		print "    No entry with that login for", label
 		return False
 
 	def update(self, label, login, pw):
+		self.pin.check()
 		key = hashlib.sha256(str(self.gsalt + label).encode('utf-8')).hexdigest()
 		if key not in self.data.keys():
 			print "    No entries for", label
