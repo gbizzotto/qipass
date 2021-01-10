@@ -8,6 +8,7 @@ import random
 import string
 from base64 import b64encode, b64decode
 import binascii
+import getch
 
 #must install
 # pip3 install pyperclip
@@ -54,7 +55,7 @@ def get_pw_strength(password):
 	if len(password) >= 16:
 		strength += 1
 
-	if any (ord(c)>127 or ord(c)<32 for c in password):
+	if any (ord(c)>126 or ord(c)<32 for c in password):
 		answer = raw_input("Some characters are exotic, you sure? (y/N) ")
 		if answer != 'y':
 			sys.exit(0)
@@ -86,8 +87,8 @@ class Vault:
 			self.mph2   = file_data['mph2']
 			self.data   = file_data['data']
 			self.gsalt  = file_data['gsalt']
-			self.mph = self.hash_password(self.gsalt + getpass.getpass("Master password: "))
-			if self.mph2 != self.hash_password(self.mph):
+			self.mph = self.hash_passwordba(getch.getpass("Master password: "), self.gsalt)
+			if self.mph2 != self.hash_passwordba(self.mph):
 				print "    Wrong password."
 				sys.exit(0)
 			print "    Password OK."
@@ -122,17 +123,21 @@ class Vault:
 		return self.data[key].append(entry)
 
 	def create_master_password_hash(self):
-		pw = getpass.getpass()
+		pw = getch.getpass()
 		print "    Your password is", get_pw_strength(pw)
-		pw2 = getpass.getpass("Confirm: ")
+		pw2 = getch.getpass("Confirm: ")
 		if pw != pw2:
 			print "    Passwords do not match"
 			sys.exit(0)
-		self.mph = self.hash_password(self.gsalt + pw)
-		return self.hash_password(self.mph)
+		self.mph = self.hash_passwordba(pw, self.gsalt)
+		return self.hash_passwordba(self.mph)
 
-	def hash_password(self, pw):
-		return hashlib.sha256(str(pw).encode('utf-8')).hexdigest()
+	def hash_passwordba(self, pw, salt=None):
+		h = hashlib.sha256()
+		if salt is not None:
+			h.update(salt)
+		h.update(pw)
+		return h.hexdigest()
 
 	def cipher(self, data, nonce):
 		aes = AES.new(str(self.mph[:32]), AES.MODE_CTR, nonce=str(nonce))
@@ -192,8 +197,8 @@ def main(filename):
 				entry = {}
 				nonce = random_string(12)
 				entry["nonce"] = nonce
-				entry["login"] = vault.cipher(getpass.getpass("Login (optional): "), nonce)
-				entry["password"] = vault.cipher(getpass.getpass("Password: "), nonce)
+				entry["login"] = vault.cipher(getch.getpass("Login (optional): "), nonce)
+				entry["password"] = vault.cipher(getch.getpass("Password: "), nonce)
 				vault.add(label, entry)
 				vault.write()
 				print "    Saved."
@@ -201,7 +206,7 @@ def main(filename):
 			if not vault.has(label):
 				print "No entry for this yet."
 				continue
-			login = getpass.getpass("Care to specify a login? (login/ALL) ")
+			login = getch.getpass("Care to specify a login? (login/ALL) ")
 			if len(login) == 0:
 				# let's decipher and show all entries
 				vault.print_all(label)
@@ -215,4 +220,15 @@ if __name__ == "__main__":
 	if len(sys.argv) != 2:
 		print "Usage:", sys.argv[0], "<file>"
 		sys.exit(0)
+
+	# p = getch.getpass()
+	# for  c in p:
+	# 	print chr(c)
+	# vault = Vault(sys.argv[1])
+	# h = vault.hash_password(vault.gsalt + p)
+	# hba = vault.hash_passwordba(p, vault.gsalt)
+	# print vault.gsalt
+	# print h
+	# print hba
+	
 	main(sys.argv[1])
