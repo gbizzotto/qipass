@@ -205,6 +205,7 @@ class Vault:
 					print("\033[A    Password:", ("*"*max(16,len(pw))))
 				else:
 					put_in_clipboard(pw)
+					print("    Password copied to clipboard.")
 				return
 		print("    No entry with that login for", label)
 
@@ -269,7 +270,22 @@ def main(filename):
 				nonce = random_string(12)
 				entry["nonce"] = nonce
 				entry["login"] = vault.cipher(getpass.getpass("Login (optional): "), nonce)
-				entry["password"] = vault.cipher(getpass.getpass("Password: "), nonce)
+				pw = getpass.getpass("Password (leave empty to generate): ")
+				if len(pw) == 0:
+					pw = ''.join(random.SystemRandom().choice([chr(x) for x in range(33,127)]) for _ in range(16))
+					choice = 'a'
+					while choice not in "sc":
+						choice = raw_input("Print password on screen (s) or copy to clipboard (c)? ")
+					if choice == "s":
+						sys.stdout.write("    Password generated: " + pw + "\r")
+						sys.stdout.flush()
+						raw_input("")
+						print("\033[A    Password generated:", ("*"*max(16,len(pw))))
+					else:
+						put_in_clipboard(pw)
+						print("    Password copied to clipboard.")
+					sys.stdout.flush()
+				entry["password"] = vault.cipher(pw, nonce)
 				confirm_pw = vault.cipher(getpass.getpass("Confirm: "), nonce)
 				if confirm_pw != entry["password"]:
 					print("    Passwords differ.")
