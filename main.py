@@ -12,6 +12,11 @@ import binascii
 import copy
 import time
 
+if sys.version_info[0] < 3:
+	from urlparse import urlparse
+else:
+	from urllib.parse import urlparse
+
 #must install
 # pip3 install pyperclip
 import pyperclip
@@ -74,6 +79,15 @@ def get_pw_strength(password):
 
 	return ["abominable", "weak af", "weak", "meh", "OK, I guess", "good", "strong", "worthy of doom slayer"][strength]
 
+def get_host(url):
+	if not url.startswith('http'):
+		return url
+	host = urlparse(url).hostname
+	if host.count('.') > 1:
+		host = host[h.find('.', host.count('.')-1)+1:]
+	print("    Using URL's host as label:", host)
+	return host
+		
 def hash_password(pw):
 	return hashlib.sha256(str(pw).encode('utf-8')).hexdigest()
 
@@ -256,7 +270,8 @@ def main(filename):
 	try:
 		vault = Vault(filename)
 		while True:
-			label = raw_input("URL/label: ")
+			label = raw_input("Label or URL (copy/paste with http to avoid phishing): ")
+			label = get_host(label)
 			action = None
 			if not vault.has_label(label):
 				print("    No entry for this yet, let's create one.")
