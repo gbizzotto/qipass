@@ -2,7 +2,6 @@ from __future__ import print_function
 import sys
 import os
 import json
-import getpass
 import hashlib
 import re
 import random
@@ -11,6 +10,7 @@ from base64 import b64encode, b64decode
 import binascii
 import copy
 import time
+import prompt
 
 if sys.version_info[0] < 3:
 	from urlparse import urlparse
@@ -44,9 +44,6 @@ else:
 	def monotonic_time():
 		return time.clock_gettime(time.CLOCK_MONOTONIC_RAW)
 
-if sys.version_info[0] >= 3:
-	raw_input = input
-
 def random_string(size):
 	return ''.join(random.SystemRandom().choice(string.ascii_letters + string.digits) for _ in range(size))
  
@@ -73,7 +70,7 @@ def get_pw_strength(password):
 		strength += 1
 
 	if any (ord(c)>127 or ord(c)<32 for c in password):
-		answer = raw_input("Some characters are exotic, you sure? (y/N) ")
+		answer = prompt.input("Some characters are exotic, you sure? (y/N) ")
 		if answer != 'y':
 			sys.exit(0)
 
@@ -95,12 +92,21 @@ class Pin:
 	timeout = 30 # seconds
 	def __init__(self):
 		self.salt = random_string(12)
-		self.hashed_pin = hash_password(self.salt + getpass.getpass("Create session pin: "))
+		pin = prompt.input("Create session pin: ", echo=prompt.NONE)
+		if pin is None:
+			print("    Cancelled.")
+			sys.exit(0)
+		self.hashed_pin = hash_password(self.salt + pin)
 		self.checkpoint = monotonic_time()
 	def check(self):
-		if monotonic_time() - self.checkpoint > Pin.timeout and self.hashed_pin != hash_password(self.salt + getpass.getpass("Pin: ")):
-			print("    Wrong pin.")
-			sys.exit(0)
+		if monotonic_time() - self.checkpoint > Pin.timeout:
+			pin = prompt.input("Pin: ", echo=prompt.NONE)
+			if pin is None:
+				print("    Cancelled.")
+				sys.exit(0)
+			if self.hashed_pin != hash_password(self.salt + pin):
+				print("    Wrong pin.")
+				sys.exit(0)
 		self.checkpoint = monotonic_time()
 
 class Vault:
@@ -123,7 +129,10 @@ class Vault:
 		self.path = filename
 		if os.path.isfile(self.path):
 			# prompt for pw first thing, so if the user launches the program and starts typing his master pw right away out of habit, it'll be hidden by getpass
-			pw = getpass.getpass("Master password: ")
+			pw = prompt.input("Master password: ", echo=prompt.HIDE)
+			if pw is None:
+				print("    Cancelled.")
+				sys.exit(0)
 			with open(filename, 'r') as myfile:
 				json_data = myfile.read()
 			file_data = json.loads(json_data)
@@ -136,7 +145,7 @@ class Vault:
 				sys.exit(0)
 			print("    Password OK.")
 		else:
-			answer = raw_input("Create new file? (y/N) ")
+			answer = prompt.input("Create new file? (y/N) ")
 			if answer != 'y':
 				sys.exit(0)
 			self.gsalt = random_string(12)
@@ -181,9 +190,15 @@ class Vault:
 		return self.data[key].append(entry)
 
 	def create_master_password_hash(self):
-		pw = getpass.getpass("Create master password: ")
+		pw = prompt.input("Create master password: ", prompt.HIDE)
+		if pw is None:
+			print("    Cancelled")
+			sys.exit(0)
 		print("    Your password is", get_pw_strength(pw))
-		pw2 = getpass.getpass("Confirm: ")
+		pw2 = prompt.input("Confirm: ", prompt.HIDE)
+		if pw2 is None:
+			print("    Cancelled")
+			sys.exit(0)
 		if pw != pw2:
 			print("    Passwords do not match")
 			sys.exit(0)
@@ -210,12 +225,15 @@ class Vault:
 			if self.cipher(login, entry["nonce"]) == entry["login"]:
 				choice = 'a'
 				while choice not in "sc":
-					choice = raw_input("Print password on screen (s) or copy to clipboard (c)? ")
+					choice = prompt.input("Print password on screen (s) or copy to clipboard (c)? ")
+					if choice is None:
+						print("    Cancelled.")
+						return
 				pw = self.decipher(entry["password"], entry["nonce"])
 				if choice == "s":
 					sys.stdout.write("    Password: " + pw + "\r")
 					sys.stdout.flush()
-					raw_input("")
+					prompt.input("")
 					print("\033[A    Password:", ("*"*max(16,len(pw))))
 				else:
 					put_in_clipboard(pw)
@@ -234,7 +252,7 @@ class Vault:
 			pw = self.decipher(entry["password"], entry["nonce"])
 			sys.stdout.write("    Password: " + pw + "\r")
 			sys.stdout.flush()
-			raw_input("")
+			prompt.input("")
 			print("\033[A    Password:", ("*"*max(16,len(pw))))
 
 	def delete(self, label, login):
@@ -269,8 +287,12 @@ class Vault:
 def main(filename):
 	try:
 		vault = Vault(filename)
+		label_history = []
 		while True:
-			label = raw_input("Label or URL (copy/paste with http to avoid phishing): ")
+			label = prompt.input("Label or URL (copy/paste with http to avoid phishing): ", history=label_history)
+			if label is None:
+				print("    Press ctrl-c or ctrl-d to exit.")
+				continue
 			label = get_host(label)
 			action = None
 			if not vault.has_label(label):
@@ -278,31 +300,47 @@ def main(filename):
 				action = 'c'
 			else:
 				print("    There are entrie(s) for this already.")
-				action = raw_input("Create/View/Update/Delete/NoAction? (c/v/u/d/N) ")
-			if action == 'c':
+				action = prompt.input("Create/View/Update/Delete/NoAction? (c/v/u/d/N) ")
+			if action is None:
+				print("    Cancelled.")
+				continue
+			elif action == 'c':
 				# new entry
 				entry = {}
 				nonce = random_string(12)
 				entry["nonce"] = nonce
-				entry["login"] = vault.cipher(getpass.getpass("Login (optional): "), nonce)
-				pw = getpass.getpass("Password (leave empty to generate): ")
+				login = prompt.input("Login (optional): ", prompt.HIDE)
+				if login is None:
+					print("    Cancelled.")
+					continue
+				entry["login"] = vault.cipher(login, nonce)
+				pw = prompt.input("Password (leave empty to generate): ", prompt.HIDE)
+				if pw is None:
+					print("    Cancelled.")
+					continue
 				if len(pw) == 0:
 					pw = ''.join(random.SystemRandom().choice([chr(x) for x in range(33,127)]) for _ in range(16))
 					choice = 'a'
 					while choice not in "sc":
-						choice = raw_input("Print password on screen (s) or copy to clipboard (c)? ")
+						choice = prompt.input("Print password on screen (s) or copy to clipboard (c)? ")
+						if choice is None:
+							print("    Cancelled.")
+							continue
 					if choice == "s":
 						sys.stdout.write("    Password generated: " + pw + "\r")
 						sys.stdout.flush()
-						raw_input("")
+						prompt.input("")
 						print("\033[A    Password generated:", ("*"*max(16,len(pw))))
 					else:
 						put_in_clipboard(pw)
 						print("    Password copied to clipboard.")
 					sys.stdout.flush()
 				entry["password"] = vault.cipher(pw, nonce)
-				confirm_pw = vault.cipher(getpass.getpass("Confirm: "), nonce)
-				if confirm_pw != entry["password"]:
+				confirm_pw = prompt.input("Confirm: ", prompt.HIDE)
+				if confirm_pw is None:
+					print("    Cancelled.")
+					continue
+				if vault.cipher(confirm_pw, nonce) != entry["password"]:
 					print("    Passwords differ.")
 					continue
 				vault.add(label, entry)
@@ -310,23 +348,35 @@ def main(filename):
 				print("    Saved.")
 				continue
 			elif action == 'v':
-				login = getpass.getpass("Care to specify a login? (login/ALL) ")
+				login = prompt.input("Care to specify a login? (login/ALL) ", prompt.HIDE)
+				if login is None:
+					print("    Cancelled.")
+					continue
 				if len(login) == 0:
 					# let's decipher and show all entries
 					vault.print_all(label)
 				else:
 					vault.print_specific(label, login)
 			elif action == 'd':
-				login = getpass.getpass("Login do delete: ")
+				login = prompt.input("Login to delete: ", prompt.HIDE)
+				if login is None:
+					print("    Cancelled.")
+					continue
 				if len(login) == 0:
-					confirm = raw_input("Delete entry for '" + label + "' with empty login? (y/N) ")
+					confirm = prompt.input("Delete entry for '" + label + "' with empty login? (y/N) ")
+					if confirm is None:
+						print("    Cancelled.")
+						continue
 					if confirm != 'y':
 						continue
 				vault_backup = copy.deepcopy(vault)
 				if vault.delete(label, login) == False:
 					continue
 				print("    One entry for '" + label + "' was deleted.")
-				confirm = raw_input("Commit vault to file? (y/N) ")
+				confirm = prompt.input("Commit vault to file? (y/N) ")
+				if confirm is None:
+					print("    Cancelled.")
+					continue
 				if confirm != 'y':
 					del vault
 					vault = vault_backup
@@ -336,11 +386,20 @@ def main(filename):
 				vault.write()
 				print("    Saved.")
 			elif action == 'u':
-				login = getpass.getpass("Login do update: ")
+				login = prompt.input("Login to update: ", prompt.HIDE)
+				if login is None:
+					print("    Cancelled.")
+					continue
 				if not vault.has_login(label, login):
 					continue
-				pw = getpass.getpass("New password: ")
-				confirm_pw = getpass.getpass("Confirm: ")
+				pw = prompt.input("New password: ", prompt.HIDE)
+				if pw is None:
+					print("    Cancelled.")
+					continue
+				confirm_pw = prompt.input("Confirm: ", prompt.HIDE)
+				if confirm_pw is None:
+					print("    Cancelled.")
+					continue
 				if confirm_pw != pw:
 					print("    Passwords differ.")
 					continue
@@ -348,7 +407,10 @@ def main(filename):
 				if vault.update(label, login, pw) == False:
 					continue
 				print("    One entry for '" + label + "' was updated.")
-				confirm = raw_input("Commit vault to file? (y/N) ")
+				confirm = prompt.input("Commit vault to file? (y/N) ")
+				if confirm is None:
+					print("    Cancelled.")
+					continue
 				if confirm != 'y':
 					del vault
 					vault = vault_backup
